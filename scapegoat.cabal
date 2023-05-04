@@ -1,0 +1,60 @@
+cabal-version:      3.4
+name:               scapegoat
+version:            0.1.0.0
+-- synopsis:
+-- description:
+license:            MIT
+license-file:       LICENSE
+author:             Frank Staals
+maintainer:         frank@fstaals.net
+-- copyright:
+category:           Data
+build-type:         Simple
+extra-doc-files:    CHANGELOG.org
+-- extra-source-files:
+
+--------------------------------------------------------------------------------
+
+common setup
+    ghc-options: -Wall
+    default-language: GHC2021
+    build-depends:
+       base ^>=4.18.0.0
+    default-extensions:
+        DataKinds
+      , TypeFamilies
+      , GADTs
+      , KindSignatures
+      , ScopedTypeVariables
+      , DerivingStrategies
+      , DerivingVia
+      , GeneralizedNewtypeDeriving
+      , DeriveGeneric
+      , DeriveFunctor
+      , PatternSynonyms
+      , TupleSections
+      , LambdaCase
+      , ViewPatterns
+      , FunctionalDependencies
+
+--------------------------------------------------------------------------------
+
+library
+    import:           setup
+    exposed-modules:
+        Scapegoat
+    -- other-modules:
+    -- other-extensions:
+    hs-source-dirs:   src
+
+--------------------------------------------------------------------------------
+
+test-suite scapegoat-test
+    import:           setup
+    -- other-modules:
+    -- other-extensions:
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        scapegoat

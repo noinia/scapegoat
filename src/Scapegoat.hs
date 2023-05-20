@@ -61,7 +61,7 @@ class Semigroup v => Measured v a | a -> v  where
 
 class Measured v a => DynMeasured v a where
   {-# MINIMAL deleteFrom #-}
-  insertInto :: a -> v -> v
+  insertInto     :: a -> v -> v
   insertInto x v = measure x <> v
 
   deleteFrom :: a -> v -> v
@@ -89,8 +89,63 @@ lookupLE = undefined
 
 --------------------------------------------------------------------------------
 
-insert     :: (Ord a, DynMeasured v a) => a -> ScapegoatTree v a -> ScapegoatTree v a
-insert x t = undefined
+type Depth = Int
+type Size = Int
+
+-- data Sized a = Sized {-# UNPACK #-}!Int a
+--              deriving stock (Show,Eq)
+
+insert     :: forall v a. (Ord a, DynMeasured v a) => a -> ScapegoatTree v a -> ScapegoatTree v a
+insert x t0 = t0 { size = n
+
+                 }
+
+  insert' 0 (tree t0)
+  where
+    n = succ $ size t0
+    allowedDepth = ceiling $ logBase @Double (3/2) (fromIntegral n)
+
+    -- | insert x into the tree. Returns a three tuple (t',msize,mmax) where
+    --     t'    : is the new tree, including the newly inserted element
+    --     msize : in case the size is Nothing we just keep the tree as is,
+    --             if the size is a Just k, it means we have to rebalance
+    --             somewhere on the path.
+    --     mmax  : the new maximum in the subtree, or nothing if it didn't change
+    insert'     :: Depth -- ^ depth of the tree t'
+                -> Tree v a -- ^ tree t'
+                -> (Tree v a, Maybe Size)
+    insert' d t = case t of
+      Leaf y                  -> let msize = if d < allowedDepth then Nothing else Just 2
+                                     v     = measure x <> measure y
+                                 in case x `compare` y of
+                                      LT -> (Node (Leaf x) x v t, msize)
+                                      EQ -> (t,                    Nothing)
+                                            -- x already present ; so just ignore
+                                      GT -> (Node t y v (Leaf x), msize)
+
+      Node l k v r | x <= k    -> let (l', msl) = insert' (d+1) l
+                                      t'        = Node l' k (insertInto x v) r
+                                  in node' t' (length r) msl
+                   | otherwise -> let (r', msr) = insert' (d+1) r
+                                      t'        = Node l k (insertInto x v) r'
+                                  in node' t' (length l) msr
+
+    -- given the new tree t', the size of the other subtree so, and maybe the size of the
+    -- tree that we inserted in, computes the actual new node
+    node' t' so = \case
+        Nothing                      -> (t',                    Nothing)
+        Just su | needsRebuild su so -> (perfectN (su + so) t', Nothing)
+                | otherwise          -> (t',                    Just $ su + so)
+
+
+
+-- | Given the size of the updated child, and the sizeo f the other
+-- child, test if we have to rebuild at this node.
+needsRebuild       :: Size -- ^ size updated child
+                   -> Size -- ^ size other child
+                   -> Bool -- ^ whether or not we need rebuilding
+needsRebuild su so = 3 * su > 2* (su + so)
+  -- the condition is: su / (su + so) > 2/3
 
 -- insert' :: Ord a => a -> Tree v a -> Tree v a
 -- insert' x t = go
@@ -99,6 +154,26 @@ insert x t = undefined
 --       Leaf x -> Node
 
 
+
+newtype Elem a = Elem a
+  deriving newtype (Show,Eq,Ord)
+
+instance Measured () (Elem a) where
+  measure _ = ()
+
+instance DynMeasured () (Elem a) where
+  deleteFrom _ _ = ()
+
+test :: ScapegoatTree () (Elem Int)
+test = fromAscList . fmap Elem $ 0 :| [1,4,7,8,10,23]
+
+-- | Test if a scapegoat tree is perfectly balanced
+isPerfect :: ScapegoatTree v a -> Bool
+isPerfect = go . tree
+  where
+    go = \case
+      Leaf _       -> True
+      Node l _ _ r -> abs (length l - length r) <= 1 && go l && go r
 
 --------------------------------------------------------------------------------
 -- * Rebuilding
@@ -113,11 +188,16 @@ fromAscListN n = ScapegoatTree n n . perfect
 data Tree' a = Leaf' a | Node' (Tree' a) (Tree' a)
              deriving stock (Show,Eq)
 
+
 -- | Builds a perfectly balanced tree of the given size
 perfect    :: (Foldable1 f, Measured v a) => f a -> Tree v a
-perfect xs = case perfect' (length xs) (toNonEmpty xs) of
-               (t, []) -> fst $ fromTree' t
-               _       -> error "perfect: leftover elements, absurd."
+perfect xs = perfectN (length xs) xs
+
+-- | Builds a perfectly balanced tree of the given size
+perfectN      :: (Foldable1 f, Measured v a) => Int -> f a -> Tree v a
+perfectN n xs = case perfect' n (toNonEmpty xs) of
+  (t, []) -> fst $ fromTree' t
+  _       -> error "perfect: leftover elements, absurd."
 
 -- | Transforms our Tree' into a proper Tree, returns the tree as well
 -- as the rightmost element.

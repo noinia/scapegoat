@@ -4,25 +4,25 @@ module Scapegoat
   , fromAscList
   , fromAscListN
   , fromNonEmpty
+  , lookup
   , lookupGE
   , lookupLE
   , insert
   , delete
 
   , isPerfect
-
-
   ) where
 
 import           Control.Applicative ((<|>))
 import           Data.Foldable1
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NonEmpty
-import           Prelude hiding (minimum,maximum)
+import           Prelude hiding (minimum,maximum,lookup)
 import           Scapegoat.Measured
 
 --------------------------------------------------------------------------------
 
+-- | A non-empty scapegoatTree
 data ScapegoatTree v a = ScapegoatTree { size    :: {-# UNPACK #-} !Int
                                        , maxSize :: {-# UNPACK #-} !Int
                                        , tree    :: Tree v a
@@ -30,6 +30,8 @@ data ScapegoatTree v a = ScapegoatTree { size    :: {-# UNPACK #-} !Int
                          deriving stock (Show,Eq,Functor)
 
 -- | Constructs a singleton tree
+--
+-- \(O(1)\)
 singleton   :: a -> ScapegoatTree v a
 singleton x = ScapegoatTree 1 1 (Leaf x)
 
@@ -75,6 +77,16 @@ instance Measured v a => Measured v (Tree v a) where
 --------------------------------------------------------------------------------
 -- * Queries
 
+
+-- | Test if the element appears
+--
+-- \(O(\log n)\)
+lookup     :: Ord a => a -> ScapegoatTree v a -> Bool
+lookup q t = Just q == lookupGE q t
+
+-- | Successor query
+--
+-- -- \(O(\log n)\)
 lookupGE   :: Ord a => a -> ScapegoatTree v a -> Maybe a
 lookupGE q = go . tree
   where
@@ -84,17 +96,26 @@ lookupGE q = go . tree
       Node l k _ r | q <= k    -> go l <|> Just (minimum r)
                    | otherwise -> go r
 
-lookupLE :: Ord a => a -> ScapegoatTree v a -> Maybe a
-lookupLE = undefined
+-- | Predecessor query
+--
+-- -- \(O(\log n)\)
+lookupLE   :: Ord a => a -> ScapegoatTree v a -> Maybe a
+lookupLE q = go . tree
+  where
+    go = \case
+      Leaf x | q >= x          -> Just x
+             | otherwise       -> Nothing
+      Node l k _ r | q >= k    -> go r <|> Just (maximum l)
+                   | otherwise -> go l
 
 --------------------------------------------------------------------------------
 
 type Depth = Int
 type Size = Int
 
--- data Sized a = Sized {-# UNPACK #-}!Int a
---              deriving stock (Show,Eq)
-
+-- | Insert an element into the scapegoat tree.
+--
+-- \(O(\log n)\)
 insert      :: forall v a. (Ord a, DynMeasured v a) => a -> ScapegoatTree v a -> ScapegoatTree v a
 insert x t0 = case insert' 0 (tree t0) of
                 (t', Just n') -> t0 { maxSize = n'
@@ -135,7 +156,6 @@ insert x t0 = case insert' 0 (tree t0) of
         Nothing                      -> (t',                    Nothing)
         Just su | needsRebuild su so -> (perfectN (su + so) t', Nothing)
                 | otherwise          -> (t',                    Just $ su + so)
-
 
 
 -- | Given the size of the updated child, and the sizeo f the other
@@ -228,6 +248,9 @@ perfect' n xs         = let k         = n `div` 2
 --------------------------------------------------------------------------------
 -- * Deletions
 
+-- | Deletes an element form the scapegoat tree
+--
+-- \(O(\log n)\)
 delete     :: (Ord a, DynMeasured v a) => a -> ScapegoatTree v a -> Maybe (ScapegoatTree v a)
 delete x t = case delete' x (tree t) of
                Left _                                  -> Just t

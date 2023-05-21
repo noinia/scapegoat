@@ -1,7 +1,9 @@
 module Scapegoat
   ( ScapegoatTree
+  , singleton
   , fromAscList
   , fromAscListN
+  , fromNonEmpty
   , lookupGE
   , lookupLE
   , insert
@@ -26,6 +28,10 @@ data ScapegoatTree v a = ScapegoatTree { size    :: {-# UNPACK #-} !Int
                                        , tree    :: Tree v a
                                        }
                          deriving stock (Show,Eq,Functor)
+
+-- | Constructs a singleton tree
+singleton   :: a -> ScapegoatTree v a
+singleton x = ScapegoatTree 1 1 (Leaf x)
 
 instance Foldable (ScapegoatTree v) where
   foldMap f = foldMap f . tree
@@ -157,8 +163,8 @@ instance Measured () (Elem a) where
 instance DynMeasured () (Elem a) where
   deleteFrom _ _ = ()
 
-test :: ScapegoatTree () (Elem Int)
-test = fromAscList . fmap Elem $ 0 :| [1,4,7,8,10,23]
+-- test :: ScapegoatTree () (Elem Int)
+-- test = fromAscList . fmap Elem $ 0 :| [1,4,7,8,10,23]
 
 
 
@@ -166,6 +172,14 @@ test = fromAscList . fmap Elem $ 0 :| [1,4,7,8,10,23]
 --------------------------------------------------------------------------------
 -- * Rebuilding
 
+-- | Builds a scapegoat tree by repeatedly inserting elements
+--
+-- \(O(n\log n)\)
+fromNonEmpty                             :: (Foldable1 f, DynMeasured v a, Ord a)
+                                         => f a -> ScapegoatTree v a
+fromNonEmpty (toNonEmpty -> (x0 :| xs)) = foldr (\x -> Scapegoat.insert x) (singleton x0) xs
+
+-- | Builds a scapegoat tree from a list of elements that are in increasing order.
 fromAscList   :: (Foldable1 f, Measured v a) => f a -> ScapegoatTree v a
 fromAscList xs = fromAscListN (length xs) xs
 

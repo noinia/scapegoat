@@ -6,6 +6,10 @@ module Scapegoat
   , lookupLE
   , insert
   , delete
+
+  , isPerfect
+
+
   ) where
 
 import           Control.Applicative ((<|>))
@@ -13,6 +17,7 @@ import           Data.Foldable1
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Prelude hiding (minimum,maximum)
+import           Scapegoat.Measured
 
 --------------------------------------------------------------------------------
 
@@ -56,21 +61,10 @@ instance Foldable1 (Tree v) where
 
 --------------------------------------------------------------------------------
 
-class Semigroup v => Measured v a | a -> v  where
-  measure :: a -> v
-
-class Measured v a => DynMeasured v a where
-  {-# MINIMAL deleteFrom #-}
-  insertInto     :: a -> v -> v
-  insertInto x v = measure x <> v
-
-  deleteFrom :: a -> v -> v
-
 instance Measured v a => Measured v (Tree v a) where
   measure = \case
     Leaf x       -> measure x
     Node _ _ v _ -> v
-
 
 --------------------------------------------------------------------------------
 -- * Queries
@@ -95,12 +89,16 @@ type Size = Int
 -- data Sized a = Sized {-# UNPACK #-}!Int a
 --              deriving stock (Show,Eq)
 
-insert     :: forall v a. (Ord a, DynMeasured v a) => a -> ScapegoatTree v a -> ScapegoatTree v a
-insert x t0 = t0 { size = n
-
-                 }
-
-  insert' 0 (tree t0)
+insert      :: forall v a. (Ord a, DynMeasured v a) => a -> ScapegoatTree v a -> ScapegoatTree v a
+insert x t0 = case insert' 0 (tree t0) of
+                (t', Just n') -> t0 { maxSize = n'
+                                    , size    = n'
+                                    , tree    = perfectN n' t'
+                                    }
+                (t', Nothing) -> t0 { size    = n
+                                    , maxSize = maxSize t0 `max` n
+                                    , tree    = t'
+                                    }
   where
     n = succ $ size t0
     allowedDepth = ceiling $ logBase @Double (3/2) (fromIntegral n)
@@ -110,19 +108,14 @@ insert x t0 = t0 { size = n
     --     msize : in case the size is Nothing we just keep the tree as is,
     --             if the size is a Just k, it means we have to rebalance
     --             somewhere on the path.
-    --     mmax  : the new maximum in the subtree, or nothing if it didn't change
     insert'     :: Depth -- ^ depth of the tree t'
                 -> Tree v a -- ^ tree t'
                 -> (Tree v a, Maybe Size)
     insert' d t = case t of
       Leaf y                  -> let msize = if d < allowedDepth then Nothing else Just 2
                                      v     = measure x <> measure y
-                                 in case x `compare` y of
-                                      LT -> (Node (Leaf x) x v t, msize)
-                                      EQ -> (t,                    Nothing)
-                                            -- x already present ; so just ignore
-                                      GT -> (Node t y v (Leaf x), msize)
-
+                                 in if x <= y then (Node (Leaf x) x v t, msize)
+                                              else (Node t y v (Leaf x), msize)
       Node l k v r | x <= k    -> let (l', msl) = insert' (d+1) l
                                       t'        = Node l' k (insertInto x v) r
                                   in node' t' (length r) msl
@@ -167,13 +160,8 @@ instance DynMeasured () (Elem a) where
 test :: ScapegoatTree () (Elem Int)
 test = fromAscList . fmap Elem $ 0 :| [1,4,7,8,10,23]
 
--- | Test if a scapegoat tree is perfectly balanced
-isPerfect :: ScapegoatTree v a -> Bool
-isPerfect = go . tree
-  where
-    go = \case
-      Leaf _       -> True
-      Node l _ _ r -> abs (length l - length r) <= 1 && go l && go r
+
+
 
 --------------------------------------------------------------------------------
 -- * Rebuilding
@@ -252,3 +240,18 @@ delete' x = go
                                     Left _          -> Left t
                                     Right Nothing   -> Right . Just $ l
                                     Right (Just r') -> Right . Just $ Node l k (deleteFrom x v) r'
+
+
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+
+-- | Test if a scapegoat tree is perfectly balanced. Mainly for debugging purposes.
+--
+-- O(n^2)
+isPerfect :: ScapegoatTree v a -> Bool
+isPerfect = go . tree
+  where
+    go = \case
+      Leaf _       -> True
+      Node l _ _ r -> abs (length l - length r) <= 1 && go l && go r

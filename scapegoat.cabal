@@ -43,6 +43,7 @@ library
     import:           setup
     exposed-modules:
         Scapegoat
+        Scapegoat.Measured
     -- other-modules:
     -- other-extensions:
     hs-source-dirs:   src
@@ -51,10 +52,17 @@ library
 
 test-suite scapegoat-test
     import:           setup
-    -- other-modules:
+    other-modules:
+        Spec
+        ScapegoatSpec
     -- other-extensions:
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
         scapegoat
+      , hspec                   >= 2.9
+      , QuickCheck              >= 2.10
+      , quickcheck-instances
+    build-tool-depends:
+        hspec-discover:hspec-discover
